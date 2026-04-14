@@ -358,7 +358,12 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 			branchName := i.branchName
 			if branchName == "" {
 				cfg := config.LoadConfig()
-				branchName = git.GenerateBranchName(cfg.BranchPrefix)
+				if i.Title != "" {
+					// Auto-generate from title: spaces to dashes, sanitized
+					branchName = fmt.Sprintf("%s%s", cfg.BranchPrefix, strings.ReplaceAll(i.Title, " ", "-"))
+				} else {
+					branchName = git.GenerateBranchName(cfg.BranchPrefix)
+				}
 			}
 			gitWorktree, err := git.NewGitWorktree(i.Path, branchName)
 			if err != nil {

@@ -36,8 +36,10 @@ type TextInputOverlay struct {
 	textarea      textarea.Model
 	titleInput    textarea.Model
 	hasTitleInput bool
-	dirInput      textarea.Model
-	hasDirInput   bool
+	dirInput           textarea.Model
+	hasDirInput        bool
+	branchNameInput    textarea.Model
+	hasBranchNameInput bool
 	Title         string
 	FocusIndex    int // index into focusable stops
 	Submitted     bool
@@ -118,27 +120,39 @@ func NewTextInputOverlayWithTitle(title string, initialValue string, initialDir 
 	dirTi.MaxHeight = 0
 	dirTi.SetHeight(1)
 
+	branchNameTi := textarea.New()
+	branchNameTi.SetValue("")
+	branchNameTi.ShowLineNumbers = false
+	branchNameTi.Prompt = ""
+	branchNameTi.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	branchNameTi.CharLimit = 0
+	branchNameTi.MaxHeight = 0
+	branchNameTi.SetHeight(1)
+	branchNameTi.SetWidth(40)
+
 	var pp *ProfilePicker
 	if len(profiles) > 0 {
 		pp = NewProfilePicker(profiles)
 	}
 
-	// Focus order: [profile] -> title -> prompt -> dir -> branch -> enter
-	numStops := 5 // title + prompt + dir + branch + enter
+	// Focus order: [profile] -> title -> prompt -> dir -> branchName -> branch -> enter
+	numStops := 6 // title + prompt + dir + branchName + branch + enter
 	if pp != nil && pp.HasMultiple() {
-		numStops = 6
+		numStops = 7
 	}
 
 	overlay := &TextInputOverlay{
-		textarea:      ti,
-		titleInput:    titleTi,
-		hasTitleInput: true,
-		dirInput:      dirTi,
-		hasDirInput:   true,
-		Title:         title,
-		profilePicker: pp,
-		branchPicker:  bp,
-		numStops:      numStops,
+		textarea:           ti,
+		titleInput:         titleTi,
+		hasTitleInput:      true,
+		dirInput:           dirTi,
+		hasDirInput:        true,
+		branchNameInput:    branchNameTi,
+		hasBranchNameInput: true,
+		Title:              title,
+		profilePicker:      pp,
+		branchPicker:       bp,
+		numStops:           numStops,
 	}
 	overlay.updateFocusState()
 	return overlay
@@ -168,6 +182,9 @@ func (t *TextInputOverlay) SetSize(width, height int) {
 	}
 	if t.hasDirInput {
 		t.dirInput.SetWidth(width - 6)
+	}
+	if t.hasBranchNameInput {
+		t.branchNameInput.SetWidth(width - 6)
 	}
 	if t.branchPicker != nil {
 		t.branchPicker.SetWidth(width - 6)
@@ -236,6 +253,21 @@ func (t *TextInputOverlay) isEnterButton() bool {
 	return t.FocusIndex == t.numStops-1
 }
 
+// isBranchNameInput returns true if the current focus is on the branch name input.
+func (t *TextInputOverlay) isBranchNameInput() bool {
+	if !t.hasBranchNameInput {
+		return false
+	}
+	base := 0
+	if t.profilePicker != nil && t.profilePicker.HasMultiple() {
+		base = 1
+	}
+	if t.hasTitleInput {
+		base++
+	}
+	return t.FocusIndex == base+2
+}
+
 // isBranchPicker returns true if the current focus is on the branch picker.
 func (t *TextInputOverlay) isBranchPicker() bool {
 	if t.branchPicker == nil {
@@ -248,7 +280,11 @@ func (t *TextInputOverlay) isBranchPicker() bool {
 	if t.hasTitleInput {
 		base++
 	}
-	return t.FocusIndex == base+2
+	offset := 2
+	if t.hasBranchNameInput {
+		offset = 3
+	}
+	return t.FocusIndex == base+offset
 }
 
 // setFocusIndex sets the focus index and syncs focus state.
@@ -276,6 +312,13 @@ func (t *TextInputOverlay) updateFocusState() {
 			t.dirInput.Focus()
 		} else {
 			t.dirInput.Blur()
+		}
+	}
+	if t.hasBranchNameInput {
+		if t.isBranchNameInput() {
+			t.branchNameInput.Focus()
+		} else {
+			t.branchNameInput.Blur()
 		}
 	}
 	if t.branchPicker != nil {
@@ -321,7 +364,12 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) (bool, bool) {
 			return false, false
 		}
 		if t.isDirInput() {
-			// Enter on dir input = advance to branch picker
+			// Enter on dir input = advance to next field
+			t.setFocusIndex(t.FocusIndex + 1)
+			return false, false
+		}
+		if t.isBranchNameInput() {
+			// Enter on branch name input = advance to branch picker
 			t.setFocusIndex(t.FocusIndex + 1)
 			return false, false
 		}
@@ -351,6 +399,10 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) (bool, bool) {
 		}
 		if t.isDirInput() {
 			t.dirInput, _ = t.dirInput.Update(msg)
+			return false, false
+		}
+		if t.isBranchNameInput() {
+			t.branchNameInput, _ = t.branchNameInput.Update(msg)
 			return false, false
 		}
 		if t.isProfilePicker() {
@@ -386,6 +438,14 @@ func (t *TextInputOverlay) GetTitleValue() string {
 		return ""
 	}
 	return t.titleInput.Value()
+}
+
+// GetBranchNameValue returns the current value of the branch name input.
+func (t *TextInputOverlay) GetBranchNameValue() string {
+	if !t.hasBranchNameInput {
+		return ""
+	}
+	return t.branchNameInput.Value()
 }
 
 // GetSelectedBranch returns the selected branch name from the branch picker.
@@ -485,6 +545,15 @@ func (t *TextInputOverlay) Render() string {
 		content += divider + "\n\n"
 		content += tiTitleStyle.Render("Working Directory") + "\n"
 		content += t.dirInput.View() + "\n\n"
+	}
+
+	// Render branch name input if present
+	if t.hasBranchNameInput {
+		content += divider + "\n\n"
+		content += tiTitleStyle.Render("Branch Name") + "\n"
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		content += dimStyle.Render("(leave empty to auto-generate from title)") + "\n"
+		content += t.branchNameInput.View() + "\n\n"
 	}
 
 	// Render branch picker if present, with dividers
