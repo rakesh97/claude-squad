@@ -651,6 +651,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 							m.state = stateDefault
 							return m, m.handleError(err)
 						}
+						instance.SkipWorktree = true
 						instance.SetStatus(session.Loading)
 						finalizer := m.list.AddInstance(instance)
 						finalizer()
@@ -867,8 +868,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// happens on the main thread when killDoneMsg is received.
 		title := selected.Title
 		killAction := func() tea.Msg {
-			// Skip worktree checks for imported sessions
-			if !selected.Imported {
+			// Skip worktree checks for imported and skip-worktree sessions
+			if !selected.Imported && !selected.SkipWorktree {
 				worktree, err := selected.GetGitWorktree()
 				if err != nil {
 					return killDoneMsg{title: title, err: err}
@@ -900,8 +901,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if selected == nil || selected.Status == session.Loading {
 			return m, nil
 		}
-		if selected.Imported {
-			return m, m.handleError(fmt.Errorf("cannot push imported sessions (no managed worktree)"))
+		if selected.Imported || selected.SkipWorktree {
+			return m, m.handleError(fmt.Errorf("cannot push sessions without managed worktree"))
 		}
 
 		// Create the push action as a tea.Cmd
@@ -926,8 +927,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if selected == nil || selected.Status == session.Loading {
 			return m, nil
 		}
-		if selected.Imported {
-			return m, m.handleError(fmt.Errorf("cannot checkout imported sessions (no managed worktree)"))
+		if selected.Imported || selected.SkipWorktree {
+			return m, m.handleError(fmt.Errorf("cannot checkout sessions without managed worktree"))
 		}
 
 		// Show help screen before pausing

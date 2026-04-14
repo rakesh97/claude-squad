@@ -54,6 +54,9 @@ type Instance struct {
 	// Imported is true if this session was imported from an existing tmux session
 	// not originally managed by Claude Squad.
 	Imported bool
+	// SkipWorktree is true for sessions that should run in their original project
+	// directory without git worktree isolation (e.g., resumed conversations).
+	SkipWorktree bool
 
 	// DiffStats stores the current git diff statistics
 	diffStats *git.DiffStats
@@ -80,17 +83,18 @@ type Instance struct {
 // ToInstanceData converts an Instance to its serializable form
 func (i *Instance) ToInstanceData() InstanceData {
 	data := InstanceData{
-		Title:     i.Title,
-		Path:      i.Path,
-		Branch:    i.Branch,
-		Status:    i.Status,
-		Height:    i.Height,
-		Width:     i.Width,
-		CreatedAt: i.CreatedAt,
-		UpdatedAt: time.Now(),
-		Program:   i.Program,
-		AutoYes:   i.AutoYes,
-		Imported:  i.Imported,
+		Title:        i.Title,
+		Path:         i.Path,
+		Branch:       i.Branch,
+		Status:       i.Status,
+		Height:       i.Height,
+		Width:        i.Width,
+		CreatedAt:    i.CreatedAt,
+		UpdatedAt:    time.Now(),
+		Program:      i.Program,
+		AutoYes:      i.AutoYes,
+		Imported:     i.Imported,
+		SkipWorktree: i.SkipWorktree,
 	}
 
 	// Only include worktree data if gitWorktree is initialized
@@ -127,6 +131,27 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		}
 		instance.CreatedAt = data.CreatedAt
 		instance.UpdatedAt = data.UpdatedAt
+		return instance, nil
+	}
+
+	if data.SkipWorktree {
+		// SkipWorktree sessions have no git worktree; restore by reconnecting
+		// to the existing tmux session.
+		instance := &Instance{
+			Title:        data.Title,
+			Path:         data.Path,
+			Branch:       data.Branch,
+			Status:       data.Status,
+			Height:       data.Height,
+			Width:        data.Width,
+			CreatedAt:    data.CreatedAt,
+			UpdatedAt:    data.UpdatedAt,
+			Program:      data.Program,
+			SkipWorktree: true,
+		}
+		if err := instance.Start(false); err != nil {
+			return nil, err
+		}
 		return instance, nil
 	}
 
@@ -240,7 +265,8 @@ func (i *Instance) RepoName() (string, error) {
 		return "", fmt.Errorf("cannot get repo name for instance that has not been started")
 	}
 	if i.gitWorktree == nil {
-		return "", fmt.Errorf("no git worktree for instance")
+		// SkipWorktree and Imported sessions have no worktree; derive name from Path.
+		return filepath.Base(i.Path), nil
 	}
 	return i.gitWorktree.GetRepoName(), nil
 }
@@ -288,7 +314,10 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 	i.setLoadingStatus("Preparing workspace for '" + i.Title + "'...")
 
 	if firstTimeSetup {
-		if i.selectedBranch != "" {
+		if i.SkipWorktree {
+			// For resumed sessions, skip worktree creation and use the project directory directly.
+			i.setLoadingStatus("Preparing session...")
+		} else if i.selectedBranch != "" {
 			i.setLoadingStatus("Checking out branch '" + i.selectedBranch + "'...")
 			gitWorktree, err := git.NewGitWorktreeFromBranch(i.Path, i.selectedBranch, i.Title)
 			if err != nil {
@@ -328,22 +357,30 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 			return setupErr
 		}
 	} else {
-		// Setup git worktree first
-		i.setLoadingStatus("Setting up git worktree (isolating your workspace)...")
-		if err := i.gitWorktree.Setup(); err != nil {
-			setupErr = fmt.Errorf("failed to setup git worktree: %w", err)
-			return setupErr
-		}
-
-		i.setLoadingStatus("Spinning up tmux session (almost there!)...")
-		// Create new session
-		if err := i.tmuxSession.Start(i.gitWorktree.GetWorktreePath()); err != nil {
-			// Cleanup git worktree if tmux session creation fails
-			if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
-				err = fmt.Errorf("%v (cleanup error: %v)", err, cleanupErr)
+		if i.SkipWorktree {
+			i.setLoadingStatus("Starting session...")
+			if err := i.tmuxSession.Start(i.Path); err != nil {
+				setupErr = fmt.Errorf("failed to start session: %w", err)
+				return setupErr
 			}
-			setupErr = fmt.Errorf("failed to start new session: %w", err)
-			return setupErr
+		} else {
+			// Setup git worktree first
+			i.setLoadingStatus("Setting up git worktree (isolating your workspace)...")
+			if err := i.gitWorktree.Setup(); err != nil {
+				setupErr = fmt.Errorf("failed to setup git worktree: %w", err)
+				return setupErr
+			}
+
+			i.setLoadingStatus("Spinning up tmux session (almost there!)...")
+			// Create new session
+			if err := i.tmuxSession.Start(i.gitWorktree.GetWorktreePath()); err != nil {
+				// Cleanup git worktree if tmux session creation fails
+				if cleanupErr := i.gitWorktree.Cleanup(); cleanupErr != nil {
+					err = fmt.Errorf("%v (cleanup error: %v)", err, cleanupErr)
+				}
+				setupErr = fmt.Errorf("failed to start new session: %w", err)
+				return setupErr
+			}
 		}
 	}
 
@@ -377,8 +414,8 @@ func (i *Instance) Kill() error {
 		}
 	}
 
-	// Only clean up worktree for non-imported sessions
-	if !i.Imported && i.gitWorktree != nil {
+	// Only clean up worktree for sessions that have a managed worktree
+	if !i.Imported && !i.SkipWorktree && i.gitWorktree != nil {
 		if err := i.gitWorktree.Cleanup(); err != nil {
 			errs = append(errs, fmt.Errorf("failed to cleanup git worktree: %w", err))
 		}
@@ -505,6 +542,9 @@ func (i *Instance) Pause() error {
 	}
 	if i.Imported {
 		return fmt.Errorf("cannot pause imported sessions (no managed worktree)")
+	}
+	if i.SkipWorktree {
+		return fmt.Errorf("cannot pause sessions without managed worktree")
 	}
 
 	var errs []error
