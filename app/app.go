@@ -621,10 +621,16 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				selected := m.importOverlay.GetSelectedSession()
 				if selected != nil {
 					if selected.SessionID != "" {
-						// Resume-based import: create a new managed session with the resume command
+						// Resume-based import: create a new managed session with the resume command.
+						// Use a short session ID suffix to ensure unique branch names on retry.
+						idSuffix := selected.SessionID
+						if len(idSuffix) > 8 {
+							idSuffix = idSuffix[:8]
+						}
 						title := selected.Name
-						if len(title) > 32 {
-							title = title[:32]
+						maxLen := 32 - len(idSuffix) - 1 // leave room for "-<id>"
+						if len(title) > maxLen {
+							title = title[:maxLen]
 						}
 						// Remove characters that are invalid in git branch names
 						title = strings.Map(func(r rune) rune {
@@ -634,6 +640,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 							return r
 						}, title)
 						title = strings.TrimRight(title, "- ")
+						title = title + "-" + idSuffix
 						instance, err := session.NewInstance(session.InstanceOptions{
 							Title:   title,
 							Path:    selected.WorkDir,
