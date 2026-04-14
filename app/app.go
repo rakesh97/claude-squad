@@ -559,11 +559,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 						prog = selectedProgram
 					}
 
+					customBranchName := m.textInputOverlay.GetBranchNameValue()
+
 					instance, err := session.NewInstance(session.InstanceOptions{
-						Title:   title,
-						Path:    absDir,
-						Program: prog,
-						Branch:  selectedBranch,
+						Title:      title,
+						Path:       absDir,
+						Program:    prog,
+						Branch:     selectedBranch,
+						BranchName: customBranchName,
 					})
 					if err != nil {
 						m.textInputOverlay = nil
