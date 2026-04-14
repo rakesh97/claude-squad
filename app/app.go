@@ -677,6 +677,11 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 					m.state = stateDefault
 					return m, m.handleError(fmt.Errorf("title cannot be empty"))
 				}
+				if runewidth.StringWidth(newTitle) > MaxTitleLength {
+					m.textInputOverlay = nil
+					m.state = stateDefault
+					return m, m.handleError(fmt.Errorf("title cannot be longer than %d characters", MaxTitleLength))
+				}
 				selected := m.list.GetSelectedInstance()
 				if selected != nil {
 					if err := selected.SetTitle(newTitle); err != nil {
