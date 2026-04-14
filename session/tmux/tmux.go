@@ -94,8 +94,16 @@ func (t *TmuxSession) Start(workDir string) error {
 		return fmt.Errorf("tmux session already exists: %s", t.sanitizedName)
 	}
 
-	// Create a new detached tmux session and start claude in it
-	cmd := exec.Command("tmux", "new-session", "-d", "-s", t.sanitizedName, "-c", workDir, t.program)
+	// Create a new detached tmux session and start the program in it.
+	// If the program contains spaces (e.g. "claude --resume <uuid>"), wrap it
+	// in a shell so tmux passes the arguments correctly.
+	args := []string{"new-session", "-d", "-s", t.sanitizedName, "-c", workDir}
+	if strings.Contains(t.program, " ") {
+		args = append(args, "sh", "-c", t.program)
+	} else {
+		args = append(args, t.program)
+	}
+	cmd := exec.Command("tmux", args...)
 
 	ptmx, err := t.ptyFactory.Start(cmd)
 	if err != nil {
