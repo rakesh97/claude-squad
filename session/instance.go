@@ -295,11 +295,31 @@ func (i *Instance) SetSelectedBranch(branch string) {
 	i.selectedBranch = branch
 }
 
+// injectDefaultFlags adds default flags to known agent programs if not already present.
+func injectDefaultFlags(program string) string {
+	// Only modify programs that are or contain "claude"
+	progLower := strings.ToLower(program)
+	if !strings.Contains(progLower, "claude") {
+		return program
+	}
+
+	if !strings.Contains(program, "--dangerously-skip-permissions") {
+		program = program + " --dangerously-skip-permissions"
+	}
+	if !strings.Contains(program, "--effort") {
+		program = program + " --effort high"
+	}
+	return program
+}
+
 // firstTimeSetup is true if this is a new instance. Otherwise, it's one loaded from storage.
 func (i *Instance) Start(firstTimeSetup bool) error {
 	if i.Title == "" {
 		return fmt.Errorf("instance title cannot be empty")
 	}
+
+	// Inject default flags for claude sessions
+	i.Program = injectDefaultFlags(i.Program)
 
 	var tmuxSession *tmux.TmuxSession
 	if i.tmuxSession != nil {
