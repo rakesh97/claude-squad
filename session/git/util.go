@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // sanitizeBranchName transforms an arbitrary string into a Git branch name friendly string.
@@ -34,6 +35,12 @@ func sanitizeBranchName(s string) string {
 	s = strings.Trim(s, "-/.")
 
 	return s
+}
+
+// GenerateBranchName creates a unique branch name using the given prefix and a timestamp.
+func GenerateBranchName(prefix string) string {
+	ts := time.Now().Format("20060102-150405")
+	return sanitizeBranchName(fmt.Sprintf("%s%s", prefix, ts))
 }
 
 // checkGHCLI checks if GitHub CLI is installed and configured

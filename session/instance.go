@@ -1,6 +1,7 @@
 package session
 
 import (
+	"claude-squad/config"
 	"claude-squad/log"
 	"claude-squad/session/git"
 	"claude-squad/session/tmux"
@@ -60,6 +61,10 @@ type Instance struct {
 
 	// DiffStats stores the current git diff statistics
 	diffStats *git.DiffStats
+
+	// branchName is the explicit branch name to use when creating a new worktree.
+	// If empty, a branch name is auto-generated.
+	branchName string
 
 	// selectedBranch is the existing branch to start on (empty = new branch from HEAD)
 	selectedBranch string
@@ -204,6 +209,8 @@ type InstanceOptions struct {
 	AutoYes bool
 	// Branch is an existing branch name to start the session on (empty = new branch from HEAD)
 	Branch string
+	// BranchName is the explicit new branch name (auto-generated if empty)
+	BranchName string
 }
 
 // NewImportedInstance creates an Instance that wraps an existing tmux session
@@ -256,6 +263,7 @@ func NewInstance(opts InstanceOptions) (*Instance, error) {
 		CreatedAt:      t,
 		UpdatedAt:      t,
 		AutoYes:        false,
+		branchName:     opts.BranchName,
 		selectedBranch: opts.Branch,
 	}, nil
 }
@@ -347,7 +355,12 @@ func (i *Instance) Start(firstTimeSetup bool) error {
 			i.Branch = i.selectedBranch
 		} else {
 			i.setLoadingStatus("Creating a fresh branch...")
-			gitWorktree, branchName, err := git.NewGitWorktree(i.Path, i.Title)
+			branchName := i.branchName
+			if branchName == "" {
+				cfg := config.LoadConfig()
+				branchName = git.GenerateBranchName(cfg.BranchPrefix)
+			}
+			gitWorktree, err := git.NewGitWorktree(i.Path, branchName)
 			if err != nil {
 				return fmt.Errorf("failed to create git worktree: %w", err)
 			}
@@ -533,12 +546,9 @@ func (i *Instance) Started() bool {
 	return i.started
 }
 
-// SetTitle sets the title of the instance. Returns an error if the instance has started.
-// We cant change the title once it's been used for a tmux session etc.
+// SetTitle sets the title of the instance. Title is visual-only and does not
+// affect git branch names or tmux session names.
 func (i *Instance) SetTitle(title string) error {
-	if i.started {
-		return fmt.Errorf("cannot change title of a started instance")
-	}
 	i.Title = title
 	return nil
 }
