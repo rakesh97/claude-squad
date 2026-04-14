@@ -34,6 +34,8 @@ var (
 // TextInputOverlay represents a text input overlay with state management.
 type TextInputOverlay struct {
 	textarea      textarea.Model
+	titleInput    textarea.Model
+	hasTitleInput bool
 	dirInput      textarea.Model
 	hasDirInput   bool
 	Title         string
@@ -98,6 +100,50 @@ func NewTextInputOverlayWithBranchPicker(title string, initialValue string, init
 	return overlay
 }
 
+// NewTextInputOverlayWithTitle creates a text input overlay that includes a
+// session title input, prompt, directory input, branch picker, and optional profile picker.
+func NewTextInputOverlayWithTitle(title string, initialValue string, initialDir string, profiles []config.Profile) *TextInputOverlay {
+	ti := newTextarea(initialValue)
+	bp := NewBranchPicker()
+
+	titleTi := newTextarea("")
+	titleTi.SetHeight(1)
+
+	dirTi := textarea.New()
+	dirTi.SetValue(initialDir)
+	dirTi.ShowLineNumbers = false
+	dirTi.Prompt = ""
+	dirTi.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	dirTi.CharLimit = 0
+	dirTi.MaxHeight = 0
+	dirTi.SetHeight(1)
+
+	var pp *ProfilePicker
+	if len(profiles) > 0 {
+		pp = NewProfilePicker(profiles)
+	}
+
+	// Focus order: [profile] -> title -> prompt -> dir -> branch -> enter
+	numStops := 5 // title + prompt + dir + branch + enter
+	if pp != nil && pp.HasMultiple() {
+		numStops = 6
+	}
+
+	overlay := &TextInputOverlay{
+		textarea:      ti,
+		titleInput:    titleTi,
+		hasTitleInput: true,
+		dirInput:      dirTi,
+		hasDirInput:   true,
+		Title:         title,
+		profilePicker: pp,
+		branchPicker:  bp,
+		numStops:      numStops,
+	}
+	overlay.updateFocusState()
+	return overlay
+}
+
 func newTextarea(initialValue string) textarea.Model {
 	ti := textarea.New()
 	ti.SetValue(initialValue)
@@ -117,6 +163,9 @@ func (t *TextInputOverlay) SetSize(width, height int) {
 	t.textarea.SetHeight(height)
 	t.width = width
 	t.height = height
+	if t.hasTitleInput {
+		t.titleInput.SetWidth(width - 6)
+	}
 	if t.hasDirInput {
 		t.dirInput.SetWidth(width - 6)
 	}
@@ -143,12 +192,28 @@ func (t *TextInputOverlay) isProfilePicker() bool {
 	return t.profilePicker != nil && t.profilePicker.HasMultiple() && t.FocusIndex == 0
 }
 
+// isTitleInput returns true if the current focus is on the title input.
+func (t *TextInputOverlay) isTitleInput() bool {
+	if !t.hasTitleInput {
+		return false
+	}
+	base := 0
+	if t.profilePicker != nil && t.profilePicker.HasMultiple() {
+		base = 1
+	}
+	return t.FocusIndex == base
+}
+
 // isTextarea returns true if the current focus is on the textarea.
 func (t *TextInputOverlay) isTextarea() bool {
+	base := 0
 	if t.profilePicker != nil && t.profilePicker.HasMultiple() {
-		return t.FocusIndex == 1
+		base = 1
 	}
-	return t.FocusIndex == 0
+	if t.hasTitleInput {
+		base++
+	}
+	return t.FocusIndex == base
 }
 
 // isDirInput returns true if the current focus is on the directory input.
@@ -156,10 +221,14 @@ func (t *TextInputOverlay) isDirInput() bool {
 	if !t.hasDirInput {
 		return false
 	}
+	base := 0
 	if t.profilePicker != nil && t.profilePicker.HasMultiple() {
-		return t.FocusIndex == 2
+		base = 1
 	}
-	return t.FocusIndex == 1
+	if t.hasTitleInput {
+		base++
+	}
+	return t.FocusIndex == base+1
 }
 
 // isEnterButton returns true if the current focus is on the enter button.
@@ -172,10 +241,14 @@ func (t *TextInputOverlay) isBranchPicker() bool {
 	if t.branchPicker == nil {
 		return false
 	}
+	base := 0
 	if t.profilePicker != nil && t.profilePicker.HasMultiple() {
-		return t.FocusIndex == 3
+		base = 1
 	}
-	return t.FocusIndex == 2
+	if t.hasTitleInput {
+		base++
+	}
+	return t.FocusIndex == base+2
 }
 
 // setFocusIndex sets the focus index and syncs focus state.
@@ -184,8 +257,15 @@ func (t *TextInputOverlay) setFocusIndex(i int) {
 	t.updateFocusState()
 }
 
-// updateFocusState syncs the textarea/branchPicker/profilePicker/dirInput focus/blur state.
+// updateFocusState syncs the textarea/branchPicker/profilePicker/dirInput/titleInput focus/blur state.
 func (t *TextInputOverlay) updateFocusState() {
+	if t.hasTitleInput {
+		if t.isTitleInput() {
+			t.titleInput.Focus()
+		} else {
+			t.titleInput.Blur()
+		}
+	}
 	if t.isTextarea() {
 		t.textarea.Focus()
 	} else {
@@ -235,6 +315,11 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) (bool, bool) {
 			}
 			return true, false
 		}
+		if t.isTitleInput() {
+			// Enter on title input = advance to next field
+			t.setFocusIndex(t.FocusIndex + 1)
+			return false, false
+		}
 		if t.isDirInput() {
 			// Enter on dir input = advance to branch picker
 			t.setFocusIndex(t.FocusIndex + 1)
@@ -246,7 +331,7 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) (bool, bool) {
 			return false, false
 		}
 		if t.isProfilePicker() {
-			// Enter on profile picker = advance to textarea
+			// Enter on profile picker = advance to next field
 			t.setFocusIndex(t.FocusIndex + 1)
 			return false, false
 		}
@@ -256,6 +341,10 @@ func (t *TextInputOverlay) HandleKeyPress(msg tea.KeyMsg) (bool, bool) {
 		}
 		return false, false
 	default:
+		if t.isTitleInput() {
+			t.titleInput, _ = t.titleInput.Update(msg)
+			return false, false
+		}
 		if t.isTextarea() {
 			t.textarea, _ = t.textarea.Update(msg)
 			return false, false
@@ -289,6 +378,14 @@ func (t *TextInputOverlay) GetDirValue() string {
 		return ""
 	}
 	return t.dirInput.Value()
+}
+
+// GetTitleValue returns the current value of the title input.
+func (t *TextInputOverlay) GetTitleValue() string {
+	if !t.hasTitleInput {
+		return ""
+	}
+	return t.titleInput.Value()
 }
 
 // GetSelectedBranch returns the selected branch name from the branch picker.
@@ -370,6 +467,13 @@ func (t *TextInputOverlay) Render() string {
 	// Render profile picker if present, above the prompt
 	if t.profilePicker != nil {
 		content += t.profilePicker.Render() + "\n\n"
+		content += divider + "\n\n"
+	}
+
+	// Render title input if present
+	if t.hasTitleInput {
+		content += tiTitleStyle.Render("Session Title") + "\n"
+		content += t.titleInput.View() + "\n\n"
 		content += divider + "\n\n"
 	}
 

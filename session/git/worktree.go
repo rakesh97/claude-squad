@@ -69,25 +69,23 @@ func resolveWorktreePaths(repoPath string, branchName string) (resolvedRepo stri
 	return resolvedRepo, worktreePath, nil
 }
 
-// NewGitWorktree creates a new GitWorktree instance
-func NewGitWorktree(repoPath string, sessionName string) (tree *GitWorktree, branchname string, err error) {
-	cfg := config.LoadConfig()
-	branchName := fmt.Sprintf("%s%s", cfg.BranchPrefix, sessionName)
-	// Sanitize the final branch name to handle invalid characters from any source
-	// (e.g., backslashes from Windows domain usernames like DOMAIN\user)
-	branchName = sanitizeBranchName(branchName)
+// NewGitWorktree creates a new GitWorktree instance.
+// explicitBranchName is the full branch name to use (caller is responsible for
+// generating it, e.g. via GenerateBranchName). It will be sanitized for safety.
+func NewGitWorktree(repoPath string, explicitBranchName string) (tree *GitWorktree, err error) {
+	branchName := sanitizeBranchName(explicitBranchName)
 
 	repoPath, worktreePath, err := resolveWorktreePaths(repoPath, branchName)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	return &GitWorktree{
 		repoPath:     repoPath,
-		sessionName:  sessionName,
+		sessionName:  branchName,
 		branchName:   branchName,
 		worktreePath: worktreePath,
-	}, branchName, nil
+	}, nil
 }
 
 // NewGitWorktreeFromBranch creates a new GitWorktree that uses an existing branch.

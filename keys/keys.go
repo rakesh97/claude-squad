@@ -25,6 +25,7 @@ const (
 	KeyPrompt // New key for entering a prompt
 	KeyHelp   // Key for showing help screen
 	KeyImport // Key for importing external tmux sessions
+	KeyRename // Key for renaming a session
 
 	// Diff keybindings
 	KeyShiftUp
@@ -51,6 +52,7 @@ var GlobalKeyStringsMap = map[string]KeyName{
 	"p":          KeySubmit,
 	"?":          KeyHelp,
 	"I":          KeyImport,
+	"R":          KeyRename,
 }
 
 // GlobalkeyBindings is a global, immutable map of KeyName tot keybinding.
@@ -114,6 +116,10 @@ var GlobalkeyBindings = map[KeyName]key.Binding{
 	KeyImport: key.NewBinding(
 		key.WithKeys("I"),
 		key.WithHelp("I", "import"),
+	),
+	KeyRename: key.NewBinding(
+		key.WithKeys("R"),
+		key.WithHelp("R", "rename"),
 	),
 
 	// -- Special keybindings --

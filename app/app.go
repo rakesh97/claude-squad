@@ -24,6 +24,7 @@ import (
 )
 
 const GlobalInstanceLimit = 10
+const MaxTitleLength = 100
 
 // Run is the main entrypoint into the application.
 func Run(ctx context.Context, program string, autoYes bool) error {
@@ -50,6 +51,8 @@ const (
 	stateConfirm
 	// stateImport is the state when the user is importing an external tmux session.
 	stateImport
+	// stateRename is the state when the user is renaming a session.
+	stateRename
 )
 
 type home struct {
@@ -390,7 +393,7 @@ func (m *home) handleMenuHighlighting(msg tea.KeyMsg) (cmd tea.Cmd, returnEarly 
 		m.keySent = false
 		return nil, false
 	}
-	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateImport {
+	if m.state == statePrompt || m.state == stateHelp || m.state == stateConfirm || m.state == stateImport || m.state == stateRename {
 		return nil, false
 	}
 	// If it's in the global keymap, we should try to highlight it.
@@ -480,8 +483,8 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 
 			return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), startCmd)
 		case tea.KeyRunes:
-			if runewidth.StringWidth(instance.Title) >= 32 {
-				return m, m.handleError(fmt.Errorf("title cannot be longer than 32 characters"))
+			if runewidth.StringWidth(instance.Title) >= MaxTitleLength {
+				return m, m.handleError(fmt.Errorf("title cannot be longer than %d characters", MaxTitleLength))
 			}
 			if err := instance.SetTitle(instance.Title + string(msg.Runes)); err != nil {
 				return m, m.handleError(err)
@@ -525,9 +528,6 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// Check if the form was submitted or canceled
 		if shouldClose {
 			selected := m.list.GetSelectedInstance()
-			if selected == nil {
-				return m, nil
-			}
 
 			if m.textInputOverlay.IsCanceled() {
 				return m, m.cancelPromptOverlay()
@@ -538,9 +538,58 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				selectedBranch := m.textInputOverlay.GetSelectedBranch()
 				selectedProgram := m.textInputOverlay.GetSelectedProgram()
 				selectedDir := m.textInputOverlay.GetDirValue()
+				title := m.textInputOverlay.GetTitleValue()
 
-				if !selected.Started() {
-					// Shift+N flow: instance not started yet — set branch, start, then send prompt
+				// New Shift+N flow: overlay has a title input and no instance exists yet
+				if title != "" && (selected == nil || selected.Started()) {
+					dir := selectedDir
+					if dir == "" {
+						dir = m.startDir
+					}
+					absDir, err := filepath.Abs(dir)
+					if err != nil {
+						return m, m.handleError(fmt.Errorf("invalid directory: %w", err))
+					}
+					if !git.IsGitRepo(absDir) {
+						return m, m.handleError(fmt.Errorf("'%s' is not a git repository", dir))
+					}
+
+					prog := m.program
+					if selectedProgram != "" {
+						prog = selectedProgram
+					}
+
+					instance, err := session.NewInstance(session.InstanceOptions{
+						Title:   title,
+						Path:    absDir,
+						Program: prog,
+						Branch:  selectedBranch,
+					})
+					if err != nil {
+						m.textInputOverlay = nil
+						m.state = stateDefault
+						return m, m.handleError(err)
+					}
+					instance.Prompt = prompt
+
+					instance.SetStatus(session.Loading)
+					finalizer := m.list.AddInstance(instance)
+					finalizer()
+					m.list.SetSelectedInstance(m.list.NumInstances() - 1)
+
+					m.textInputOverlay = nil
+					m.state = stateDefault
+					m.menu.SetState(ui.StateDefault)
+
+					startCmd := func() tea.Msg {
+						err := instance.Start(true)
+						return instanceStartedMsg{instance: instance, err: err, promptAfterName: false}
+					}
+					return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), startCmd)
+				}
+
+				if selected != nil && !selected.Started() {
+					// n-then-Enter flow: instance not started yet — set branch, start, then send prompt
 					if selectedBranch != "" {
 						selected.SetSelectedBranch(selectedBranch)
 					}
@@ -580,8 +629,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				}
 
 				// Regular flow: instance already running, just send prompt
-				if err := selected.SendPrompt(prompt); err != nil {
-					return m, m.handleError(err)
+				if selected != nil {
+					if err := selected.SendPrompt(prompt); err != nil {
+						return m, m.handleError(err)
+					}
 				}
 			}
 
@@ -592,7 +643,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				tea.WindowSize(),
 				func() tea.Msg {
 					m.menu.SetState(ui.StateDefault)
-					m.showHelpScreen(helpStart(selected), nil)
+					if selected != nil {
+						m.showHelpScreen(helpStart(selected), nil)
+					}
 					return nil
 				},
 			)
@@ -605,6 +658,44 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, m.scheduleBranchSearch(filter, version)
 		}
 
+		return m, nil
+	}
+
+	// Handle rename state
+	if m.state == stateRename {
+		if msg.String() == "ctrl+c" || msg.Type == tea.KeyEsc {
+			m.textInputOverlay = nil
+			m.state = stateDefault
+			return m, nil
+		}
+		shouldClose, _ := m.textInputOverlay.HandleKeyPress(msg)
+		if shouldClose {
+			if m.textInputOverlay.IsSubmitted() {
+				newTitle := strings.TrimSpace(m.textInputOverlay.GetValue())
+				if newTitle == "" {
+					m.textInputOverlay = nil
+					m.state = stateDefault
+					return m, m.handleError(fmt.Errorf("title cannot be empty"))
+				}
+				if runewidth.StringWidth(newTitle) > MaxTitleLength {
+					m.textInputOverlay = nil
+					m.state = stateDefault
+					return m, m.handleError(fmt.Errorf("title cannot be longer than %d characters", MaxTitleLength))
+				}
+				selected := m.list.GetSelectedInstance()
+				if selected != nil {
+					if err := selected.SetTitle(newTitle); err != nil {
+						return m, m.handleError(err)
+					}
+					if err := m.storage.SaveInstances(m.list.GetInstances()); err != nil {
+						return m, m.handleError(err)
+					}
+				}
+			}
+			m.textInputOverlay = nil
+			m.state = stateDefault
+			return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
+		}
 		return m, nil
 	}
 
@@ -628,7 +719,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 							idSuffix = idSuffix[:8]
 						}
 						title := selected.Name
-						maxLen := 32 - len(idSuffix) - 1 // leave room for "-<id>"
+						maxLen := MaxTitleLength - len(idSuffix) - 1 // leave room for "-<id>"
 						if len(title) > maxLen {
 							title = title[:maxLen]
 						}
@@ -792,6 +883,14 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.importOverlay = overlay.NewImportOverlay(executor, existingTitles)
 		m.state = stateImport
 		return m, tea.WindowSize()
+	case keys.KeyRename:
+		selected := m.list.GetSelectedInstance()
+		if selected == nil || selected.Status == session.Loading {
+			return m, nil
+		}
+		m.state = stateRename
+		m.textInputOverlay = overlay.NewTextInputOverlay("Rename session", selected.Title)
+		return m, tea.WindowSize()
 	case keys.KeyPrompt:
 		if m.list.NumInstances() >= GlobalInstanceLimit {
 			return m, m.handleError(
@@ -805,22 +904,13 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return nil
 		}
 
-		instance, err := session.NewInstance(session.InstanceOptions{
-			Title:   "",
-			Path:    m.startDir,
-			Program: m.program,
-		})
-		if err != nil {
-			return m, m.handleError(err)
-		}
+		m.state = statePrompt
+		m.menu.SetState(ui.StatePrompt)
+		m.textInputOverlay = overlay.NewTextInputOverlayWithTitle("Enter prompt", "", m.startDir, m.appConfig.GetProfiles())
+		m.promptAfterName = false
+		initialSearch := m.runBranchSearch("", m.textInputOverlay.BranchFilterVersion())
 
-		m.newInstanceFinalizer = m.list.AddInstance(instance)
-		m.list.SetSelectedInstance(m.list.NumInstances() - 1)
-		m.state = stateNew
-		m.menu.SetState(ui.StateNewInstance)
-		m.promptAfterName = true
-
-		return m, fetchCmd
+		return m, tea.Batch(tea.WindowSize(), fetchCmd, initialSearch)
 	case keys.KeyNew:
 		if m.list.NumInstances() >= GlobalInstanceLimit {
 			return m, m.handleError(
@@ -1187,6 +1277,10 @@ func (m *home) newPromptOverlay() *overlay.TextInputOverlay {
 	return overlay.NewTextInputOverlayWithBranchPicker("Enter prompt", "", m.startDir, m.appConfig.GetProfiles())
 }
 
+func (m *home) newPromptOverlayWithTitle() *overlay.TextInputOverlay {
+	return overlay.NewTextInputOverlayWithTitle("Enter prompt", "", m.startDir, m.appConfig.GetProfiles())
+}
+
 // cancelPromptOverlay cancels the prompt overlay, cleaning up unstarted instances.
 func (m *home) cancelPromptOverlay() tea.Cmd {
 	selected := m.list.GetSelectedInstance()
@@ -1230,7 +1324,7 @@ func (m *home) View() string {
 		m.errBox.String(),
 	)
 
-	if m.state == statePrompt {
+	if m.state == statePrompt || m.state == stateRename {
 		if m.textInputOverlay == nil {
 			log.ErrorLog.Printf("text input overlay is nil")
 		}
