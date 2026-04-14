@@ -26,8 +26,12 @@ func sanitizeBranchName(s string) string {
 	reDash := regexp.MustCompile(`-+`)
 	s = reDash.ReplaceAllString(s, "-")
 
-	// Trim leading and trailing dashes or slashes to avoid issues
-	s = strings.Trim(s, "-/")
+	// Replace consecutive dots (..) which are invalid in git branch names
+	reDots := regexp.MustCompile(`\.{2,}`)
+	s = reDots.ReplaceAllString(s, ".")
+
+	// Trim leading and trailing dashes, slashes, or dots to avoid issues
+	s = strings.Trim(s, "-/.")
 
 	return s
 }

@@ -624,8 +624,16 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 						// Resume-based import: create a new managed session with the resume command
 						title := selected.Name
 						if len(title) > 32 {
-							title = title[:29] + "..."
+							title = title[:32]
 						}
+						// Remove characters that are invalid in git branch names
+						title = strings.Map(func(r rune) rune {
+							if r == '.' || r == '~' || r == '^' || r == ':' || r == '?' || r == '*' || r == '[' || r == '\\' {
+								return '-'
+							}
+							return r
+						}, title)
+						title = strings.TrimRight(title, "- ")
 						instance, err := session.NewInstance(session.InstanceOptions{
 							Title:   title,
 							Path:    selected.WorkDir,
