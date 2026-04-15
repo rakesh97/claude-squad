@@ -6,6 +6,8 @@
 ![Claude Squad Screenshot](assets/screenshot.png)
 
 ### Highlights
+- **Multi-project dashboard** — manage sessions across any number of repos from one window
+- **Import existing sessions** — bring in running tmux sessions, or resume saved conversations from Claude Code and Codex
 - Complete tasks in the background (including yolo / auto-accept mode!)
 - Manage instances and tasks in one terminal window
 - Review changes before applying them, checkout changes before pushing them
@@ -107,8 +109,10 @@ NOTE: The default program is `claude` and we recommend using the latest version.
 The menu at the bottom of the screen shows available commands: 
 
 ##### Instance/Session Management
-- `n` - Create a new session
-- `N` - Create a new session with a prompt
+- `n` - Create a new session (quick — title only)
+- `N` - Create a new session with full options (title, prompt, working directory, branch name, profile)
+- `I` - Import an existing session (tmux, Claude Code, or Codex conversations)
+- `R` - Rename the selected session
 - `D` - Kill (delete) the selected session
 - `↑/j`, `↓/k` - Navigate between sessions
 
@@ -124,6 +128,35 @@ The menu at the bottom of the screen shows available commands:
 - `tab` - Switch between preview tab and diff tab
 - `q` - Quit the application
 - `shift-↓/↑` - scroll in diff view
+
+### Creating Sessions with Shift+N
+
+The `N` (Shift+N) overlay provides full control over new sessions:
+
+| Field | Description |
+|-------|-------------|
+| **Profile** | Select which agent to use (if multiple profiles configured) |
+| **Session Title** | Display name (up to 100 characters, visual-only) |
+| **Prompt** | Initial prompt to send to the agent |
+| **Working Directory** | Path to the git repo (defaults to CWD, can target any repo) |
+| **Branch Name** | Custom branch name, or leave empty to auto-generate from title |
+| **Branch Picker** | Check out an existing branch instead of creating a new one |
+
+Titles are decoupled from branch names — you can use any characters in titles without affecting git operations.
+
+### Importing Sessions
+
+Press `I` to open the import overlay with three sources:
+
+- **tmux** — lists running tmux sessions not managed by Claude Squad
+- **claude code** — discovers saved conversations from `~/.claude/projects/` and resumes them via `claude --resume`
+- **codex** — discovers saved conversations from `~/.codex/session_index.jsonl` and resumes them via `codex resume`
+
+Use `←`/`→` to switch sources, `↑`/`↓` to select a session, and `Tab` to the Import button. Already-imported sessions are automatically filtered out.
+
+### Multi-Project Support
+
+Claude Squad can be launched from any directory — it no longer requires a git repository in the current working directory. Each session independently tracks its own repo and working directory. When sessions span multiple repos, the repo name is shown next to each session in the list.
 
 ### Configuration
 
@@ -167,6 +200,27 @@ underlying program (ex. `claude`) to the latest version.
 1. **tmux** to create isolated terminal sessions for each agent
 2. **git worktrees** to isolate codebases so each session works on its own branch
 3. A simple TUI interface for easy navigation and management
+
+### What's New in v2.0.0
+
+**Performance** — ~85% reduction in subprocess spawning for smoother UI on macOS:
+- Preview refresh reduced from 10/sec to 2/sec
+- SHA256 hashing replaced with direct byte comparison
+- Git diff only computed when content actually changes
+- Redundant preview captures eliminated via dirty flag
+
+**Session management improvements:**
+- Rename sessions with `R` (works on running sessions)
+- Titles increased to 100 characters, decoupled from branch names
+- Custom branch names in Shift+N overlay
+- Live progress messages during session startup
+- Agent sessions auto-configured with recommended flags
+
+**Bug fixes:**
+- Kill/push confirmations no longer freeze the UI
+- Sessions start in the correct working directory
+- Resumed conversations find their saved session data
+- Branch names preserve uppercase letters
 
 ### License
 
