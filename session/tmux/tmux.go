@@ -143,10 +143,12 @@ func (t *TmuxSession) Start(workDir string) error {
 		log.InfoLog.Printf("Warning: failed to set history-limit for session %s: %v", t.sanitizedName, err)
 	}
 
-	// Enable mouse scrolling for the session
-	mouseCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "on")
+	// Disable tmux mouse mode — Bubble Tea handles mouse events (scroll, etc.)
+	// at the TUI level. Having tmux mouse mode on simultaneously causes mouse
+	// movement to trigger text selection when attached to the session.
+	mouseCmd := exec.Command("tmux", "set-option", "-t", t.sanitizedName, "mouse", "off")
 	if err := t.cmdExec.Run(mouseCmd); err != nil {
-		log.InfoLog.Printf("Warning: failed to enable mouse scrolling for session %s: %v", t.sanitizedName, err)
+		log.InfoLog.Printf("Warning: failed to configure mouse for session %s: %v", t.sanitizedName, err)
 	}
 
 	err = t.Restore()
