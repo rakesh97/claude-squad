@@ -228,10 +228,22 @@ func (m *home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			return m, m.handleError(msg.err)
 		}
-		// Now safe to remove from list on the main thread
+		// Remove from list and terminal map immediately (instant visual feedback).
 		m.tabbedWindow.CleanupTerminalForInstance(msg.title)
-		m.list.Kill()
-		return m, tea.Batch(tea.WindowSize(), m.instanceChanged())
+		removed := m.list.RemoveSelected()
+
+		// Run the expensive cleanup (tmux kill, git worktree remove, branch delete)
+		// in the background so the UI stays responsive.
+		var cleanupCmd tea.Cmd
+		if removed != nil {
+			cleanupCmd = func() tea.Msg {
+				if err := removed.Kill(); err != nil {
+					log.ErrorLog.Printf("background cleanup for '%s': %v", msg.title, err)
+				}
+				return nil
+			}
+		}
+		return m, tea.Batch(tea.WindowSize(), m.instanceChanged(), cleanupCmd)
 	case previewTickMsg:
 		cmd := m.instanceChanged()
 		return m, tea.Batch(

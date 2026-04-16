@@ -301,6 +301,31 @@ func (l *List) Kill() {
 	l.items = append(l.items[:l.selectedIdx], l.items[l.selectedIdx+1:]...)
 }
 
+// RemoveSelected removes the selected instance from the list without killing it.
+// Returns the removed instance so the caller can run cleanup in the background.
+func (l *List) RemoveSelected() *session.Instance {
+	if len(l.items) == 0 {
+		return nil
+	}
+	target := l.items[l.selectedIdx]
+
+	// If you delete the last one in the list, select the previous one.
+	if l.selectedIdx == len(l.items)-1 {
+		defer l.Up()
+	}
+
+	// Unregister the reponame.
+	repoName, err := target.RepoName()
+	if err != nil {
+		log.ErrorLog.Printf("could not get repo name: %v", err)
+	} else {
+		l.rmRepo(repoName)
+	}
+
+	l.items = append(l.items[:l.selectedIdx], l.items[l.selectedIdx+1:]...)
+	return target
+}
+
 func (l *List) Attach() (chan struct{}, error) {
 	targetInstance := l.items[l.selectedIdx]
 	return targetInstance.Attach()
