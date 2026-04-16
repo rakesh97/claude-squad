@@ -687,6 +687,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if shouldClose {
 			if m.textInputOverlay.IsSubmitted() {
 				newTitle := strings.TrimSpace(m.textInputOverlay.GetValue())
+				newBranch := strings.TrimSpace(m.textInputOverlay.GetDirValue())
 				if newTitle == "" {
 					m.textInputOverlay = nil
 					m.state = stateDefault
@@ -699,8 +700,15 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 				}
 				selected := m.list.GetSelectedInstance()
 				if selected != nil {
-					if err := selected.SetTitle(newTitle); err != nil {
+					oldTitle := selected.Title
+					if err := selected.Rename(newTitle, newBranch); err != nil {
+						m.textInputOverlay = nil
+						m.state = stateDefault
 						return m, m.handleError(err)
+					}
+					// Clean up terminal cache if title changed
+					if oldTitle != newTitle {
+						m.tabbedWindow.CleanupTerminalForInstance(oldTitle)
 					}
 					if err := m.storage.SaveInstances(m.list.GetInstances()); err != nil {
 						return m, m.handleError(err)
@@ -903,8 +911,9 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if selected == nil || selected.Status == session.Loading {
 			return m, nil
 		}
+		branchEditable := !selected.Imported && !selected.SkipWorktree && selected.Status != session.Paused
 		m.state = stateRename
-		m.textInputOverlay = overlay.NewTextInputOverlay("Rename session", selected.Title)
+		m.textInputOverlay = overlay.NewRenameOverlay(selected.Title, selected.Branch, branchEditable)
 		return m, tea.WindowSize()
 	case keys.KeyPrompt:
 		if m.list.NumInstances() >= GlobalInstanceLimit {

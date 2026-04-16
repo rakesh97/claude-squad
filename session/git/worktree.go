@@ -134,3 +134,25 @@ func (g *GitWorktree) GetRepoName() string {
 func (g *GitWorktree) GetBaseCommitSHA() string {
 	return g.baseCommitSHA
 }
+
+// SetBranchName updates the stored branch name.
+func (g *GitWorktree) SetBranchName(name string) {
+	g.branchName = name
+}
+
+// RenameBranch renames the local git branch.
+func (g *GitWorktree) RenameBranch(newBranchName string) error {
+	newBranchName = sanitizeBranchName(newBranchName)
+	if newBranchName == "" {
+		return fmt.Errorf("branch name cannot be empty after sanitization")
+	}
+	if newBranchName == g.branchName {
+		return nil
+	}
+	_, err := g.runGitCommand(g.repoPath, "branch", "-m", g.branchName, newBranchName)
+	if err != nil {
+		return fmt.Errorf("failed to rename branch from %s to %s: %w", g.branchName, newBranchName, err)
+	}
+	g.branchName = newBranchName
+	return nil
+}
