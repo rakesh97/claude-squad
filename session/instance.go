@@ -558,6 +558,24 @@ func (i *Instance) SetTitle(title string) error {
 	return nil
 }
 
+// Rename updates the session title and optionally renames the git branch.
+// Title changes are always allowed (visual-only). Branch renames require
+// a managed git worktree (not imported, not SkipWorktree).
+func (i *Instance) Rename(newTitle, newBranch string) error {
+	// Always update title
+	i.Title = newTitle
+
+	// Branch rename only if we have a worktree and the name actually changed
+	if newBranch != "" && newBranch != i.Branch && i.gitWorktree != nil && !i.Imported && !i.SkipWorktree {
+		if err := i.gitWorktree.RenameBranch(newBranch); err != nil {
+			return err
+		}
+		i.Branch = i.gitWorktree.GetBranchName()
+	}
+
+	return nil
+}
+
 func (i *Instance) Paused() bool {
 	return i.Status == Paused
 }

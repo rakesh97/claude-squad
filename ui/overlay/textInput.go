@@ -41,7 +41,9 @@ type TextInputOverlay struct {
 	branchNameInput    textarea.Model
 	hasBranchNameInput bool
 	Title         string
-	FocusIndex    int // index into focusable stops
+	textareaLabel string // label shown above the textarea (overrides Title when non-empty)
+	dirLabel      string // label for the dirInput field (overrides "Working Directory" when non-empty)
+	FocusIndex    int    // index into focusable stops
 	Submitted     bool
 	Canceled      bool
 	OnSubmit      func()
@@ -154,6 +156,43 @@ func NewTextInputOverlayWithTitle(title string, initialValue string, initialDir 
 		branchPicker:       bp,
 		numStops:           numStops,
 	}
+	overlay.updateFocusState()
+	return overlay
+}
+
+// NewRenameOverlay creates a text input overlay for renaming a session.
+// It has two fields: title and branch name. If branchEditable is false,
+// the branch field is displayed but not focusable.
+func NewRenameOverlay(currentTitle string, currentBranch string, branchEditable bool) *TextInputOverlay {
+	titleTi := newTextarea(currentTitle)
+	titleTi.SetHeight(1)
+
+	overlay := &TextInputOverlay{
+		textarea:      titleTi,
+		Title:         "Rename Session",
+		textareaLabel: "Session Title",
+		width:         50,
+		height:        10,
+		numStops:      2, // title + enter button
+	}
+
+	if branchEditable && currentBranch != "" {
+		branchTi := textarea.New()
+		branchTi.SetValue(currentBranch)
+		branchTi.ShowLineNumbers = false
+		branchTi.Prompt = ""
+		branchTi.FocusedStyle.CursorLine = lipgloss.NewStyle()
+		branchTi.CharLimit = 0
+		branchTi.MaxHeight = 0
+		branchTi.SetHeight(1)
+		branchTi.SetWidth(40)
+
+		overlay.dirInput = branchTi
+		overlay.hasDirInput = true
+		overlay.dirLabel = "Branch Name"
+		overlay.numStops = 3 // title + branch + enter button
+	}
+
 	overlay.updateFocusState()
 	return overlay
 }
@@ -537,13 +576,21 @@ func (t *TextInputOverlay) Render() string {
 		content += divider + "\n\n"
 	}
 
-	content += tiTitleStyle.Render(t.Title) + "\n"
+	textareaLabel := t.Title
+	if t.textareaLabel != "" {
+		textareaLabel = t.textareaLabel
+	}
+	content += tiTitleStyle.Render(textareaLabel) + "\n"
 	content += t.textarea.View() + "\n\n"
 
 	// Render directory input if present
 	if t.hasDirInput {
 		content += divider + "\n\n"
-		content += tiTitleStyle.Render("Working Directory") + "\n"
+		dirLabel := "Working Directory"
+		if t.dirLabel != "" {
+			dirLabel = t.dirLabel
+		}
+		content += tiTitleStyle.Render(dirLabel) + "\n"
 		content += t.dirInput.View() + "\n\n"
 	}
 
