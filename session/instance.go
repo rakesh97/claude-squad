@@ -3,6 +3,7 @@ package session
 import (
 	"claude-squad/config"
 	"claude-squad/log"
+	"claude-squad/session/agents"
 	"claude-squad/session/git"
 	"claude-squad/session/tmux"
 	"path/filepath"
@@ -58,6 +59,9 @@ type Instance struct {
 	// SkipWorktree is true for sessions that should run in their original project
 	// directory without git worktree isolation (e.g., resumed conversations).
 	SkipWorktree bool
+	// LastAgentSessionID is the most recently detected agent session ID for
+	// this instance's working directory. Used for auto-resume after reboot.
+	LastAgentSessionID string
 
 	// DiffStats stores the current git diff statistics
 	diffStats *git.DiffStats
@@ -88,18 +92,19 @@ type Instance struct {
 // ToInstanceData converts an Instance to its serializable form
 func (i *Instance) ToInstanceData() InstanceData {
 	data := InstanceData{
-		Title:        i.Title,
-		Path:         i.Path,
-		Branch:       i.Branch,
-		Status:       i.Status,
-		Height:       i.Height,
-		Width:        i.Width,
-		CreatedAt:    i.CreatedAt,
-		UpdatedAt:    time.Now(),
-		Program:      i.Program,
-		AutoYes:      i.AutoYes,
-		Imported:     i.Imported,
-		SkipWorktree: i.SkipWorktree,
+		Title:              i.Title,
+		Path:               i.Path,
+		Branch:             i.Branch,
+		Status:             i.Status,
+		Height:             i.Height,
+		Width:              i.Width,
+		CreatedAt:          i.CreatedAt,
+		UpdatedAt:          time.Now(),
+		Program:            i.Program,
+		AutoYes:            i.AutoYes,
+		Imported:           i.Imported,
+		SkipWorktree:       i.SkipWorktree,
+		LastAgentSessionID: i.LastAgentSessionID,
 	}
 
 	// Only include worktree data if gitWorktree is initialized
@@ -136,6 +141,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		}
 		instance.CreatedAt = data.CreatedAt
 		instance.UpdatedAt = data.UpdatedAt
+		instance.LastAgentSessionID = data.LastAgentSessionID
 		return instance, nil
 	}
 
@@ -154,6 +160,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 			Program:      data.Program,
 			SkipWorktree: true,
 		}
+		instance.LastAgentSessionID = data.LastAgentSessionID
 		if err := instance.Start(false); err != nil {
 			return nil, err
 		}
@@ -184,6 +191,7 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 			Content: data.DiffStats.Content,
 		},
 	}
+	instance.LastAgentSessionID = data.LastAgentSessionID
 
 	if instance.Paused() {
 		instance.started = true
@@ -757,6 +765,25 @@ func (i *Instance) SetDiffStats(stats *git.DiffStats) {
 // GetDiffStats returns the current git diff statistics
 func (i *Instance) GetDiffStats() *git.DiffStats {
 	return i.diffStats
+}
+
+// DetectAgentSessionID finds the most recent agent session ID for the instance's
+// working directory and stores it. Best-effort, no-op if the agent isn't supported
+// or if detection fails.
+func (i *Instance) DetectAgentSessionID() {
+	if i.Program == "" || i.Path == "" {
+		return
+	}
+	progLower := strings.ToLower(i.Program)
+	var id string
+	if strings.Contains(progLower, "claude") {
+		id = agents.FindMostRecentClaudeSessionID(i.Path)
+	} else if strings.Contains(progLower, "codex") {
+		id = agents.FindMostRecentCodexSessionID(i.Path)
+	}
+	if id != "" {
+		i.LastAgentSessionID = id
+	}
 }
 
 // SendPrompt sends a prompt to the tmux session.

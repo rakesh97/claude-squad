@@ -1274,6 +1274,8 @@ func tickUpdateMetadataCmd(active []*session.Instance) tea.Cmd {
 				if r.updated {
 					r.diffStats = instance.ComputeDiff()
 				}
+				// Best-effort session ID detection for auto-resume
+				instance.DetectAgentSessionID()
 			}(idx, inst)
 		}
 		wg.Wait()
