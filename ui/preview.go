@@ -77,6 +77,15 @@ func (p *PreviewPane) UpdateContent(instance *session.Instance) error {
 				)),
 		))
 		return nil
+	case instance.Status == session.Dead:
+		p.setFallbackState(lipgloss.JoinVertical(lipgloss.Center,
+			"Session could not be recovered after reboot.",
+			"",
+			lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#FF6B6B", Dark: "#FF6B6B"}).Render(
+				"Press Ctrl+R to retry recovery, or D to remove.",
+			),
+		))
+		return nil
 	}
 
 	var content string

@@ -915,6 +915,22 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		m.state = stateRename
 		m.textInputOverlay = overlay.NewRenameOverlay(selected.Title, selected.Branch, branchEditable)
 		return m, tea.WindowSize()
+	case keys.KeyRetry:
+		selected := m.list.GetSelectedInstance()
+		if selected == nil || selected.Status != session.Dead {
+			return m, nil
+		}
+		selected.SetStatus(session.Loading)
+
+		retryCmd := func() tea.Msg {
+			if err := selected.Recover(); err != nil {
+				log.ErrorLog.Printf("retry failed for '%s': %v", selected.Title, err)
+				selected.SetStatus(session.Dead)
+				return instanceChangedMsg{}
+			}
+			return instanceChangedMsg{}
+		}
+		return m, tea.Batch(m.instanceChanged(), retryCmd)
 	case keys.KeyPrompt:
 		if m.list.NumInstances() >= GlobalInstanceLimit {
 			return m, m.handleError(
@@ -1015,7 +1031,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if selected == nil || selected.Status == session.Loading {
 			return m, nil
 		}
-		if selected.Imported || selected.SkipWorktree {
+		if selected.Imported || selected.SkipWorktree || selected.Status == session.Dead {
 			return m, m.handleError(fmt.Errorf("cannot push sessions without managed worktree"))
 		}
 
@@ -1041,7 +1057,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		if selected == nil || selected.Status == session.Loading {
 			return m, nil
 		}
-		if selected.Imported || selected.SkipWorktree {
+		if selected.Imported || selected.SkipWorktree || selected.Status == session.Dead {
 			return m, m.handleError(fmt.Errorf("cannot checkout sessions without managed worktree"))
 		}
 
@@ -1068,7 +1084,7 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		selected := m.list.GetSelectedInstance()
-		if selected == nil || selected.Paused() || selected.Status == session.Loading || !selected.TmuxAlive() {
+		if selected == nil || selected.Paused() || selected.Status == session.Loading || selected.Status == session.Dead || !selected.TmuxAlive() {
 			return m, nil
 		}
 		// Terminal tab: attach to terminal session

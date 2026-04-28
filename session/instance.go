@@ -27,6 +27,10 @@ const (
 	Loading
 	// Paused is if the instance is paused (worktree removed but branch preserved).
 	Paused
+	// Dead is if the instance could not be auto-recovered (e.g., imported
+	// sessions, missing worktree, auto-resume disabled). Users can retry
+	// recovery manually or remove the session.
+	Dead
 )
 
 // Instance is a running instance of claude code.
@@ -817,6 +821,24 @@ func (i *Instance) Resume() error {
 
 	i.SetStatus(Running)
 	return nil
+}
+
+// Recover attempts to recover a dead session by reconnecting to or recreating
+// its tmux session. Phase 2 of the recovery work (issue #50) provides the full
+// implementation; this stub allows the Dead status and retry key to be wired
+// up independently. When Phase 2 is merged, this stub is replaced with the
+// real recovery logic.
+func (i *Instance) Recover() error {
+	// Best-effort: try to restore an existing tmux session if one exists.
+	if i.tmuxSession != nil && i.tmuxSession.DoesSessionExist() {
+		if err := i.tmuxSession.Restore(); err != nil {
+			return fmt.Errorf("failed to restore tmux session: %w", err)
+		}
+		i.started = true
+		i.SetStatus(Running)
+		return nil
+	}
+	return fmt.Errorf("session cannot be recovered automatically")
 }
 
 // UpdateDiffStats updates the git diff statistics for this instance

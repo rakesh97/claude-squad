@@ -45,6 +45,7 @@ func (h helpTypeGeneral) toContent() string {
 		keyStyle.Render("I")+descStyle.Render("         - Import an existing tmux session"),
 		keyStyle.Render("D")+descStyle.Render("         - Kill (delete) the selected session"),
 		keyStyle.Render("R")+descStyle.Render("         - Rename the selected session"),
+		keyStyle.Render("ctrl+R")+descStyle.Render("    - Retry recovery of a dead session"),
 		keyStyle.Render("↑/j, ↓/k")+descStyle.Render("  - Navigate between sessions"),
 		keyStyle.Render("↵/o")+descStyle.Render("       - Attach to the selected session"),
 		keyStyle.Render("ctrl-q")+descStyle.Render("    - Detach from session"),
