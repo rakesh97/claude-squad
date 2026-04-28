@@ -42,6 +42,11 @@ type Config struct {
 	DaemonPollInterval int `json:"daemon_poll_interval"`
 	// BranchPrefix is the prefix used for git branches created by the application.
 	BranchPrefix string `json:"branch_prefix"`
+	// AutoResume controls whether dead tmux sessions are automatically recreated
+	// on startup (e.g. after a reboot). When true, instances whose underlying
+	// tmux session no longer exists are re-spawned in their original working
+	// directory and, when possible, the agent is resumed via --resume.
+	AutoResume bool `json:"auto_resume"`
 	// Profiles is a list of named program profiles.
 	Profiles []Profile `json:"profiles,omitempty"`
 }
@@ -93,6 +98,7 @@ func DefaultConfig() *Config {
 		DefaultProgram:     program,
 		AutoYes:            false,
 		DaemonPollInterval: 1000,
+		AutoResume:         true,
 		BranchPrefix: func() string {
 			user, err := user.Current()
 			if err != nil || user == nil || user.Username == "" {

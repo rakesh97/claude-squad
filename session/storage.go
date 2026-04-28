@@ -21,6 +21,8 @@ type InstanceData struct {
 	Imported     bool `json:"imported,omitempty"`
 	SkipWorktree bool `json:"skipWorktree,omitempty"`
 
+	LastAgentSessionID string `json:"lastAgentSessionID,omitempty"`
+
 	Program   string          `json:"program"`
 	Worktree  GitWorktreeData `json:"worktree"`
 	DiffStats DiffStatsData   `json:"diff_stats"`

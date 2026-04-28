@@ -258,6 +258,36 @@ func findCodexSessionCwd(homeDir, sessionID string) string {
 	return cwd
 }
 
+// FindMostRecentClaudeSessionID returns the session ID of the most recent
+// Claude Code conversation whose cwd matches workDir, or empty string.
+func FindMostRecentClaudeSessionID(workDir string) string {
+	sessions, err := ListClaudeCodeSessions(50)
+	if err != nil {
+		return ""
+	}
+	for _, s := range sessions {
+		if s.WorkDir == workDir {
+			return s.SessionID
+		}
+	}
+	return ""
+}
+
+// FindMostRecentCodexSessionID returns the session ID of the most recent
+// Codex session whose cwd matches workDir, or empty string.
+func FindMostRecentCodexSessionID(workDir string) string {
+	sessions, err := ListCodexSessions(50)
+	if err != nil {
+		return ""
+	}
+	for _, s := range sessions {
+		if s.WorkDir == workDir {
+			return s.SessionID
+		}
+	}
+	return ""
+}
+
 // TimeAgo returns a human-readable relative time string.
 func TimeAgo(t time.Time) string {
 	if t.IsZero() {

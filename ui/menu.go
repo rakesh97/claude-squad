@@ -132,9 +132,12 @@ func (m *Menu) addInstanceOptions() {
 
 	// Action group
 	actionGroup := []keys.KeyName{keys.KeyEnter, keys.KeySubmit}
-	if m.instance.Status == session.Paused {
+	switch m.instance.Status {
+	case session.Paused:
 		actionGroup = append(actionGroup, keys.KeyResume)
-	} else {
+	case session.Dead:
+		actionGroup = append(actionGroup, keys.KeyRetry)
+	default:
 		actionGroup = append(actionGroup, keys.KeyCheckout)
 	}
 
