@@ -148,10 +148,10 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		instance.UpdatedAt = data.UpdatedAt
 		instance.LastAgentSessionID = data.LastAgentSessionID
 		// Check if the imported session is still alive. If not, we can't
-		// recover it (we didn't create it), so just log and return the
-		// instance with its current state.
+		// recover it (we didn't create it), so mark Dead and return.
 		if instance.tmuxSession != nil && !instance.tmuxSession.DoesSessionExist() {
 			log.ErrorLog.Printf("imported session '%s' is no longer running", data.Title)
+			instance.SetStatus(Dead)
 		}
 		return instance, nil
 	}
@@ -182,8 +182,9 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 		} else {
 			if err := instance.ensureSessionAlive(); err != nil {
 				log.ErrorLog.Printf("could not recover session '%s': %v", instance.Title, err)
-				// Don't fail startup; leave instance with its saved status
-				// so CS still boots.
+				// Don't fail startup; mark Dead so the user sees a clear
+				// indicator and can retry via Ctrl+R.
+				instance.SetStatus(Dead)
 			}
 		}
 		return instance, nil
@@ -231,8 +232,9 @@ func FromInstanceData(data InstanceData) (*Instance, error) {
 			// Dead — try to recover
 			if err := instance.ensureSessionAlive(); err != nil {
 				log.ErrorLog.Printf("could not recover session '%s': %v", instance.Title, err)
-				// Don't fail startup; leave instance with its saved status
-				// so CS still boots.
+				// Don't fail startup; mark Dead so the user sees a clear
+				// indicator and can retry via Ctrl+R.
+				instance.SetStatus(Dead)
 			}
 		}
 	}
@@ -821,24 +823,6 @@ func (i *Instance) Resume() error {
 
 	i.SetStatus(Running)
 	return nil
-}
-
-// Recover attempts to recover a dead session by reconnecting to or recreating
-// its tmux session. Phase 2 of the recovery work (issue #50) provides the full
-// implementation; this stub allows the Dead status and retry key to be wired
-// up independently. When Phase 2 is merged, this stub is replaced with the
-// real recovery logic.
-func (i *Instance) Recover() error {
-	// Best-effort: try to restore an existing tmux session if one exists.
-	if i.tmuxSession != nil && i.tmuxSession.DoesSessionExist() {
-		if err := i.tmuxSession.Restore(); err != nil {
-			return fmt.Errorf("failed to restore tmux session: %w", err)
-		}
-		i.started = true
-		i.SetStatus(Running)
-		return nil
-	}
-	return fmt.Errorf("session cannot be recovered automatically")
 }
 
 // UpdateDiffStats updates the git diff statistics for this instance
