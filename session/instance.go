@@ -597,14 +597,14 @@ func (i *Instance) combineErrors(errs []error) error {
 }
 
 func (i *Instance) Preview() (string, error) {
-	if !i.started || i.Status == Paused {
+	if !i.started || i.Status == Paused || i.Status == Dead || i.tmuxSession == nil {
 		return "", nil
 	}
 	return i.tmuxSession.CapturePaneContent()
 }
 
 func (i *Instance) HasUpdated() (updated bool, hasPrompt bool) {
-	if !i.started {
+	if !i.started || i.Status == Dead || i.tmuxSession == nil {
 		return false, false
 	}
 	return i.tmuxSession.HasUpdated()
