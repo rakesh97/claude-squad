@@ -187,6 +187,16 @@ func LoadConfig() *Config {
 		return DefaultConfig()
 	}
 
+	// Backfill defaults for fields that existed before this version of CS
+	// added them. Without this, Go's zero-value for missing fields would
+	// silently disable features that should default to on.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err == nil {
+		if _, ok := raw["auto_resume"]; !ok {
+			config.AutoResume = true
+		}
+	}
+
 	return &config
 }
 

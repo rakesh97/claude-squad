@@ -998,8 +998,10 @@ func (m *home) handleKeyPress(msg tea.KeyMsg) (mod tea.Model, cmd tea.Cmd) {
 		// happens on the main thread when killDoneMsg is received.
 		title := selected.Title
 		killAction := func() tea.Msg {
-			// Skip worktree checks for imported and skip-worktree sessions
-			if !selected.Imported && !selected.SkipWorktree {
+			// Skip worktree checks for imported, skip-worktree, and dead sessions.
+			// Dead sessions may not have a started tmux/worktree at all; we still
+			// allow the user to remove them.
+			if !selected.Imported && !selected.SkipWorktree && selected.Status != session.Dead {
 				worktree, err := selected.GetGitWorktree()
 				if err != nil {
 					return killDoneMsg{title: title, err: err}
@@ -1258,7 +1260,9 @@ func runInstanceStartCmd(instance *session.Instance) tea.Cmd {
 func (m *home) snapshotActiveInstances() []*session.Instance {
 	var out []*session.Instance
 	for _, inst := range m.list.GetInstances() {
-		if inst.Started() && !inst.Paused() {
+		// Skip Dead sessions — their tmux session no longer exists, so
+		// polling them floods the log with capture-pane failures.
+		if inst.Started() && !inst.Paused() && inst.Status != session.Dead {
 			out = append(out, inst)
 		}
 	}
